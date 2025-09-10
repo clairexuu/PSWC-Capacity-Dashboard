@@ -8,34 +8,61 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select
 from webdriver_manager.chrome import ChromeDriverManager
 import time
-from datetime import datetime
+from datetime import datetime, timezone
+import os
+from dotenv import load_dotenv
 
 
 # -------- CONFIG --------
 WRMD_URL = "https://www.wrmd.org/"
 LOGIN_URL = WRMD_URL + "signin"
 PATIENT_LIST_URL = WRMD_URL + "lists"
-# if need to specify year of patient list
-# YEAR = 2025
-# PATIENT_LIST_YEAR_URL = PATIENT_LIST_URL +  "?change_year_to=" + YEAR
 
 # WRMD credentials
-WRMD_USERNAME = "xinyix26@uw.edu"
-WRMD_PASSWORD = "DataCX1"
+load_dotenv()
+WRMD_USERNAME = os.environ['WRMD_USERNAME']
+WRMD_PASSWORD = os.environ['WRMD_PASSWORD']
 
 def launch_wrmd_driver(headless=True):
     """
     Launches a Chrome browser (optionally headless) and returns a tuple (driver, wait).
     """
     options = Options()
+    
+    # Minimal, stable configuration for Cloud Run
     if headless:
-        options.add_argument("--headless=new")
+        options.add_argument("--headless")
+    
+    # Essential for Cloud Run
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=options)
-    wait = WebDriverWait(driver, 10)
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080")
+    
+    # Prevent detection as automation
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    
+    # User agent to appear more like a real browser
+    options.add_argument("user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
+    
+    # Check if running in container (Cloud Run) or local
+    chrome_bin = os.environ.get('CHROME_BIN')
+    chromedriver_path = os.environ.get('CHROMEDRIVER_PATH')
+    
+    if chrome_bin and chromedriver_path:
+        print(f"Using Chrome binary at: {chrome_bin}")
+        print(f"Using ChromeDriver at: {chromedriver_path}")
+        options.binary_location = chrome_bin
+        # Use system Chrome driver for containerized environment
+        service = Service(chromedriver_path)
+        driver = webdriver.Chrome(service=service, options=options)
+    else:
+        # Use ChromeDriverManager for local development
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=options)
+    
+    wait = WebDriverWait(driver, 30)  # Increased timeout for slower connections
+    print("Chrome driver launched successfully")
 
     return driver, wait
 
@@ -56,15 +83,19 @@ def login_to_wrmd(driver, wait, email=WRMD_USERNAME, password=WRMD_PASSWORD):
     print("✅ Logged in to WRMD")
 
 
-def get_pending_patients(driver, wait, since_date=None):
+def get_pending_patients(driver, wait, year):
     """
-    Scrapes all patients with disposition == 'Pending' from WRMD.
-    If since_date is provided, only includes patients admitted after that date.
+    Scrapes all patients with disposition == 'Pending' from WRMD in specified year (as a string)
     Returns a list of dicts with patient data: case_number, species, date_admitted, and age_stage.
     """
     results = []
 
     driver.get(PATIENT_LIST_URL)
+    wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'table.table')))
+    time.sleep(2)
+
+    PATIENT_LIST_URL_Year = PATIENT_LIST_URL + "?change_year_to=" + year
+    driver.get(PATIENT_LIST_URL_Year)
     wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'table.table')))
     time.sleep(2)
 
@@ -75,9 +106,8 @@ def get_pending_patients(driver, wait, since_date=None):
     print(f"Total pages: {total_pages}")
 
     # Determine page order
-    # page_range = range(1, total_pages + 1) if since_date is None else range(total_pages, 0, -1)
+    page_range = range(1, total_pages + 1)
     # Debug mode: only check the last page
-    page_range = [1, 2, 3, 4, 5, 6, 7, 8, 9]
 
     for page in page_range:
         print(f"Processing page {page}...")
@@ -104,10 +134,6 @@ def get_pending_patients(driver, wait, since_date=None):
                 except ValueError:
                     print(f"⚠️ Skipping row {case_number} due to invalid date: {date_admitted_str}")
                     continue
-
-                if since_date and date_admitted < since_date:
-                    print("⏹️ Reached date before threshold — stopping early.")
-                    return results
 
                 if disposition.lower() == "pending":
                     link = cells[2].find_element(By.TAG_NAME, "a")  # link is in species column
@@ -137,6 +163,7 @@ def get_pending_patients(driver, wait, since_date=None):
                         "species": species_name,
                         "date_admitted": date_admitted,
                         "age_stage": selected_age_stage,
+                        "page_number": page
                     })
 
                     driver.close()
@@ -146,10 +173,10 @@ def get_pending_patients(driver, wait, since_date=None):
                 print(f"⚠️ Error handling row: {e}")
 
         # Go to next/prev page
-        if (since_date is None and page < total_pages) or (since_date and page > 1):
+        if page < total_pages:
             pagination_links = driver.find_elements(By.CSS_SELECTOR, 'ul.pagination li a[href^="#"]')
             for p in pagination_links:
-                if p.text.strip() == str(page + 1 if since_date is None else page - 1):
+                if p.text.strip() == str(page + 1):
                     driver.execute_script("arguments[0].click();", p)
                     break
             time.sleep(1)
