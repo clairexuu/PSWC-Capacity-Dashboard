@@ -6,6 +6,7 @@ from wrmd_scraper_core import (
 from firebase_setup import initialize_firestore, update_capacity_count, match_species_name, match_age_stage, log_message
 from datetime import datetime, timezone, timedelta
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import InvalidSessionIdException, NoSuchWindowException, StaleElementReferenceException
 import time
@@ -235,7 +236,9 @@ def check_failed_patients(driver, wait, db, failed_patients_list, year, current_
     return processed_patients
 
 def check_and_update_dispositions(driver, wait, db, wrmd_ids_by_year, failed_patients_by_year):
-    current_time_stamp = datetime.now(timezone.utc).isoformat()
+    # Use consistent timestamp format with UTC-7 timezone
+    pacific_tz = timezone(timedelta(hours=-7))
+    current_time_stamp = datetime.now(timezone.utc).astimezone(pacific_tz).strftime("%B %d, %Y at %I:%M:%S %p UTC-7")
 
     for year_prefix, wrmd_ids_list in wrmd_ids_by_year.items():
         year = "20" + year_prefix
@@ -262,9 +265,54 @@ def check_and_update_dispositions(driver, wait, db, wrmd_ids_by_year, failed_pat
         for page_num in sorted(patients_by_page.keys()):
             print(f"📄 Checking page {page_num} for existing patients...")
             url = f"{PATIENT_LIST_URL}?change_year_to={year}&page={page_num}"
-            driver.get(url)
-            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'table.table')))
             
+            # Retry logic for page loading
+            max_retries = 3
+            retry_count = 0
+            page_loaded = False
+            
+            while retry_count < max_retries and not page_loaded:
+                try:
+                    driver.get(url)
+                    # Wait for table with increased timeout for problematic pages
+                    timeout = 60 if page_num >= 15 else 30
+                    WebDriverWait(driver, timeout).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, 'table.table'))
+                    )
+                    page_loaded = True
+                except Exception as e:
+                    retry_count += 1
+                    if retry_count < max_retries:
+                        print(f"   ⚠️ Page {page_num} failed to load (attempt {retry_count}/{max_retries}). Retrying...")
+                        print(f"      Current URL: {driver.current_url}")
+                        print(f"      Error: {str(e)[:200]}")
+                        
+                        # Check page source for debugging
+                        try:
+                            page_source = driver.page_source[:500]
+                            if "sign in" in page_source.lower() or "login" in page_source.lower():
+                                print("      ⚠️ Possible session timeout - may need to re-login")
+                            elif "error" in page_source.lower():
+                                print("      ⚠️ Page contains error message")
+                        except:
+                            pass
+                            
+                        time.sleep(5)
+                        # Try refreshing the page
+                        try:
+                            driver.refresh()
+                            time.sleep(3)
+                        except:
+                            pass
+                    else:
+                        print(f"   ❌ Failed to load page {page_num} after {max_retries} attempts.")
+                        print(f"      Final error: {str(e)}")
+                        print(f"   Skipping page {page_num}...")
+                        continue
+            
+            if not page_loaded:
+                continue
+                
             # Scroll to bottom to trigger any lazy loading
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
             time.sleep(2)
@@ -275,7 +323,9 @@ def check_and_update_dispositions(driver, wait, db, wrmd_ids_by_year, failed_pat
             
             # Wait for rows to load
             try:
-                wait.until(lambda d: len(d.find_elements(By.CSS_SELECTOR, "table.table tbody tr")) > 0)
+                WebDriverWait(driver, 10).until(
+                    lambda d: len(d.find_elements(By.CSS_SELECTOR, "table.table tbody tr")) > 0
+                )
             except:
                 print(f"⚠️ No rows found on page {page_num}, waiting longer...")
                 time.sleep(3)

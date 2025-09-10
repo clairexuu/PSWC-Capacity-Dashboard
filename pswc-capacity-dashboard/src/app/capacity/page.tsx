@@ -273,7 +273,7 @@ export default function Page() {
         minHeight: '100vh',
       }}
     >
-      <h1 style={{ margin: '24px 0', padding: '16px 0' }}>PSWC Capacity Dashboard</h1>
+      <h1 style={{ margin: '24px 0', padding: '16px 0' }}>PSWC Current Capacity Dashboard</h1>
 
       {/* Legend for shared rows */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>

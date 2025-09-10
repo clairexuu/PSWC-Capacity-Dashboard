@@ -191,12 +191,11 @@ export default function Page() {
               <table style={{ borderCollapse: 'collapse', width: '100%', tableLayout: 'fixed' }}>
                 <thead>
                   <tr>
-                    <th style={{ textAlign: 'left', background: '#ffcccb', color: '#000', padding: '10px', width: '15%' }}>Patient ID</th>
-                    <th style={{ textAlign: 'left', background: '#ffcccb', color: '#000', padding: '10px', width: '15%' }}>Species</th>
+                    <th style={{ textAlign: 'left', background: '#ffcccb', color: '#000', padding: '10px', width: '20%' }}>Patient ID</th>
+                    <th style={{ textAlign: 'left', background: '#ffcccb', color: '#000', padding: '10px', width: '20%' }}>Species</th>
                     <th style={{ textAlign: 'left', background: '#ffcccb', color: '#000', padding: '10px', width: '20%' }}>WRMD Species</th>
-                    <th style={{ textAlign: 'left', background: '#ffcccb', color: '#000', padding: '10px', width: '15%' }}>Invalid Age</th>
-                    <th style={{ textAlign: 'left', background: '#ffcccb', color: '#000', padding: '10px', width: '15%' }}>Intake Date</th>
-                    <th style={{ textAlign: 'left', background: '#ffcccb', color: '#000', padding: '10px', width: '20%' }}>Last Checked</th>
+                    <th style={{ textAlign: 'left', background: '#ffcccb', color: '#000', padding: '10px', width: '20%' }}>Invalid Age</th>
+                    <th style={{ textAlign: 'left', background: '#ffcccb', color: '#000', padding: '10px', width: '20%' }}>Intake Date</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -226,7 +225,6 @@ export default function Page() {
                         </td>
                         <td style={{ padding: '10px', borderBottom: '1px solid #eee', color: '#cc0000', fontWeight: 'bold' }}>{patient.raw_age || 'N/A'}</td>
                         <td style={{ padding: '10px', borderBottom: '1px solid #eee', color: '#000000' }}>{patient.intake_date}</td>
-                        <td style={{ padding: '10px', borderBottom: '1px solid #eee', color: '#000000' }}>{patient.last_checked}</td>
                       </tr>
                     );
                   })}
